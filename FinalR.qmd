@@ -1,0 +1,614 @@
+---
+title: "Fiscal Heterogeneity and the Dynamics of Post-Tax Income Inequality Across the European Union"
+subtitle: "Data Programming with R : Final Project"
+author: "2501684"
+format: pdf
+editor: visual
+---
+
+## Introduction
+
+The efficacy of government tax and transfer systems in mitigating market-generated income inequality is a central concern in modern political economy. The recent availability of the **Government Redistribution and Development** dataset, which provides comparable pre-tax and post-tax income distributions for 174 countries since 1980, offers an unprecedented opportunity to empirically evaluate the distributional effects of fiscal policies at a granular level. This report narrows its focus to the European Union (EU) to conduct an exploratory analysis of heterogeneity in fiscal redistribution mechanisms and outcomes.
+
+The research is structured around addressing 3 core questions:
+
+1.  **Temporal Dynamics of Extreme Wealth Concentration:** How has the post-tax income share of the highest earners (Top 1%) evolved over the long term (1980–2020+) within a key common-law EU economy, specifically Ireland, and how did external macroeconomic shocks (e.g., the 2008 financial crisis) affect this trend?
+
+2.  **Vertical Redistribution Function:** What is the quantified net effect of the national tax-and-transfer system (measured as the Net Transfer Rate) on distinct income groups (Bottom 50%, Middle 40%, Top 10%) in a representative system like Ireland, and how does the role of 'Net Beneficiary' versus 'Net Contributor' shift across the distribution?
+
+3.  **Cross-Regional Policy Divergence:** Do significant structural differences exist in the fiscal policy outcomes between the established EU-15 nations and the New Member States (NMS) of Central and Eastern Europe, and what is the quantitative disparity in their capacity for income redistribution?
+
+This analysis seeks to establish whether the widely-cited "European Social Model" functions as a unified redistributive archetype or if it is composed of two or more distinct regional models with fundamentally different operational capacities for reducing income inequality.
+
+## Link to dataset
+
+[**Government Redistribution and Posttax Income Inequality in 174 Countries since 1980**](https://www.dropbox.com/scl/fi/rd1d7rke0wwwr6948ea67/fisher-gethin-redistribution-2025-01-10.dta?rlkey=44fzwsva11qxniogr7jo2wc5g&st=l3uxpw4d&dl=0)
+
+## Data Information
+
+This dataset provides comparable estimates of government redistribution and posttax income inequality in 174 countries since 1980. It was constructed by combining pretax income inequality series from the [World Inequality Database](https://wid.world/) with additional data from household surveys, national accounts, government budgets, tax simulators, and existing fiscal incidence studies. The unit of observation is the country-year-generalized percentile. G-percentiles range from 0 (p0p1, or bottom 1%) to 99999 (p99.999p100, or top 0.001%). All distributional variables correspond to bracket averages for the corresponding g-percentiles. For instance, *a_pre* for g-percentile *99200* corresponds to the average pretax national income of income group p99.2p99.3. All variables are expressed in current local currency unit; they can be converted to constant PPP USD using the deflator and PPP conversion factor provided in the file. The file also provides posttax income distributions previously estimated in other Distributional National Accounts studies (variables indexed by *dina\_*). Three synthetic indicators of inequality, the bottom 50% share, the top 10% share, and the top 1% share are also provided, allowing for straightforward analyses of levels and trends in inequality and redistribution across countries.
+
+### Justification for Data Volume & Granularity
+
+-   **Global Scope:** The dataset covers 174 countries over 40+ years, providing the comprehensive scope necessary for globally comparative analysis of redistribution trends.
+
+-   **Granular Resolution:** It is structured by country-year-G-percentile (up to p99.999), which is essential for detailed analysis of income dynamics at both the bottom and top tails.
+
+-   **Accurate Extremes:** This high resolution prevents masking effects and allows for the precise measurement of wealth concentration (Top 1%) and targeted transfers (Bottom 50%).
+
+-   **Methodological Consistency:** It integrates and harmonizes data from diverse sources (surveys, tax simulators, WID) into a single, consistent framework.
+
+-   **Rigorous Evaluation:** The size is justified by the requirement for methodologically consistent, high-detail data needed to rigorously evaluate the efficacy of complex fiscal systems.
+
+------------------------------------------------------------------------
+
+## Libraries
+
+```{r}
+#| warning: false
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(purrr)
+library(tidyr)
+library(rio)
+```
+
+## Data Import and Cleaning
+
+```{r}
+data <- import("~/Downloads/fisher-gethin-redistribution-2025-01-10.dta")
+```
+
+Focusing only on EU countries to restrict the size of the dataset
+
+```{r}
+eu_countries <- c(
+  "Austria", "Belgium", "Bulgaria", "Croatia", "Cyprus", "Czechia",
+  "Denmark", "Estonia", "Finland", "France", "Germany", "Greece",
+  "Hungary", "Ireland", "Italy", "Latvia", "Lithuania", "Luxembourg",
+  "Malta", "Netherlands", "Poland", "Portugal", "Romania", "Slovakia",
+  "Slovenia", "Spain", "Sweden"
+)
+
+df_eu <- data |>
+  filter(isoname %in% eu_countries) |>
+  mutate(
+    isoname = as.factor(isoname),
+    gperc = as.factor(gperc)     # percentile brackets as categorical
+  )
+```
+
+Ensuring No NaN values
+
+```{r}
+colSums(is.na(df_eu))
+```
+
+## **PART 1**
+
+------------------------------------------------------------------------
+
+This section establishes the empirical foundation of the analysis by examining income inequality and fiscal redistribution within a single EU member state. Focusing on Ireland, it first traces the long-run evolution of post-tax income concentration at the top of the distribution, highlighting the sensitivity of inequality to macroeconomic shocks. It then quantifies the vertical redistributive role of the tax-and-transfer system by estimating net transfer rates across income groups, providing a benchmark for interpreting cross-regional differences in subsequent sections. Beginning with creating the region variable for the EU15 and NMS
+
+```{r}
+#creating the categories for NMS and EU15
+#New Member States of EU (NMS)
+#EU15 (OriginalEU15 countries )
+eu15 <- c(
+  "Austria", "Belgium", "Denmark", "Finland", "France", "Germany",
+  "Greece", "Ireland", "Italy", "Luxembourg", "Netherlands", "Portugal",
+  "Spain", "Sweden", "United Kingdom"
+)
+
+df_eu <- df_eu |>
+  mutate(
+    region = ifelse(isoname %in% eu15, "EU-15", "New Member States"),
+    region = as.factor(region)#new factor created
+  )
+
+```
+
+```{r}
+#selecting variables
+inequality_vars <- c("bot50_pre", "bot50_pdi", 
+                     "top10_pre", "top10_pdi",
+                     "top1_pre", "top1_pdi")
+```
+
+Visualising the Top 1% Post-Tax Income Share Over Time Ireland
+
+```{r}
+#plot:Top 1% Post-Tax Income Share Over Time Ireland
+df_eu |> 
+  filter(isoname == "Ireland") |>
+  ggplot(aes(x = as.numeric(as.character(year)), y = top1_pdi)) +
+  geom_line(color = "green", linewidth = 1) +
+  labs(
+    title = "Top 1% Post-Tax Income Share Over Time :Ireland",
+    x = "Year",
+    y = "Top 1% (Post-Tax)"
+  )
+
+```
+
+For the first 15 years shown, the income share of the top 1% was relatively stable, hovering between 0.07 (7%) and 0.075 (7.5%).The lowest point in this era occurred around 1990, where the share dropped slightly below 0.07.Following the 2008 global financial crisis, the top 1%'s share of income collapsed. By 2011/2012, the share had plummeted to its lowest point on the entire graph, dropping to roughly 0.066 (6.6%). This suggests that high earners were heavily impacted by the recession during this window.Since the post-crash low, there has been a dramatic rebound.While there was a dip around 2017, the trend since then has been sharply upward.The graph above indicates that income inequality (measured by the top 1% share) has not only recovered from the financial crisis but has exceeded previous historical highs. The gap has widened significantly in the last 5 years shown on the chart.
+
+Lets now analyse on tax progressivity in Ireland from 2010 onwards
+
+```{r}
+#| warning: false
+#| paged-print: true
+#looking at the tax progressivity_ireland
+#startng with 2010
+df_progressivity_ireland <- df_eu |>
+  filter(isoname == "Ireland" & year >=2010) |>
+    mutate(
+    # Calculate Net Transfer: Posttax - Pretax
+    a_net_trans = a_pni - a_pre,
+    # Define Income Groups based on percentiles
+    income_group = case_when(
+      p < 50000 ~ "Bottom 50%",    # p0 to p50
+      p < 90000 ~ "Middle 40%",    # p50 to p90
+      TRUE ~ "Top 10%"            # p90 to p100 
+      ))
+
+#Aggregate and Calculate Net Transfer Rate
+
+# Group only by year and the new income group
+progressivity_results_ireland <- df_progressivity_ireland |>
+  group_by(year, income_group) |>
+  summarise(
+    # Calculate the average pretax income for the entire group
+    Avg_a_pre = mean(a_pre, na.rm = TRUE),
+    # Calculate the average net transfer for the entire group
+    Avg_a_net_trans = mean(a_net_trans, na.rm = TRUE),
+    .groups = 'drop' ) |>
+  mutate(
+    # Calculate Net Transfer Rate (Net Transfer / Pretax Income)|
+    Net_Transfer_Rate = (Avg_a_net_trans / Avg_a_pre) * 100) |>
+  # Pivot wider for easy comparison of the 3 groups
+  pivot_wider(
+    id_cols = year,
+    names_from = income_group,
+    values_from = Net_Transfer_Rate) 
+```
+
+```{r}
+#| warning: false
+#| paged-print: true
+knitr::kable(
+  progressivity_results_ireland,
+  format = "latex",
+  digits = 2,
+  booktabs = TRUE,
+  caption = "Tax Progressivity Ireland")
+```
+
+For every €1 of pre-tax income earned, how much does the government add (transfers) or take away (taxes)?
+
+-   Bottom 50% (Net Beneficiaries):
+
+    -   The rate is consistently positive, meaning the state adds significant value to their income.
+
+    -   Trend: In 2010, the government added \~55 cents for every Euro earned. This peaked at 70% in 2015 (likely due to the recovery period where pre-tax market incomes were lower, making transfers a larger % of the total) and again in 2020 (62%), likely reflecting Covid-19 support payments (PUP).
+
+    -   Recent shift: By 2023, this has dropped to 50.8%, the lowest in the series, suggesting pre-tax incomes at the bottom are rising or transfer growth is slowing.
+
+-   Middle 40% (Small Net Contributors):
+
+    -   The rate is slightly negative (-4% to -9%).
+
+    -   This indicates the Irish middle class is roughly "break-even" or a small net contributor. They pay slightly more in taxes than they receive in direct cash transfers, but the burden is low compared to the top earners.
+
+-   Top 10% (Major Net Contributors):
+
+    -   The rate is largely negative (-35% to -43%).
+
+    -   This confirms that the Top 10% finance the bulk of the redistribution. In 2016-2017, they were effectively losing \~43% of their pre-tax income share to taxes/transfers.
+
+    Lets now visualize this above data
+
+```{r}
+#| warning: false
+# converting the data in 'long' format for ggplot
+plot_data <- progressivity_results_ireland |>
+  pivot_longer(cols = -year, 
+      names_to = "Income_Group", 
+      values_to = "Net_Transfer_Rate")
+
+ggplot(plot_data, aes(x = year, y = 
+                    Net_Transfer_Rate, color = Income_Group)) +
+  # Add the lines and points
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+  geom_line(size = 1.2) +
+  geom_point(size = 3) +
+  
+  # Custom colors (Green for benefit, Red for tax)
+  scale_color_manual(values = c("Bottom 50%" = "darkgreen",  
+                                "Middle 40%" = "darkblue", 
+                                "Top 10%" = "darkred")) +
+  
+  # Formatting
+  labs(
+    title = "Net Transfer Rate by Income Group (Ireland)",
+    subtitle = "Positive = Net Beneficiary | Negative = Net Contributor",
+    y = "Net Transfer Rate (%)",
+    x = "Year",
+    caption = "Source: WID | Net Transfer = (Post-Tax - Pre-Tax) / Pre-Tax"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+```{r}
+#| warning: false
+# purrr: computing summary statistics for each spending variable
+spend_list <- c("gov_soc", "gov_edu", "gov_hea", "gov_tot")
+
+spend_summaries <- map(
+  spend_list,
+  ~ df_eu |>
+    summarise(
+      variable = .x,
+      mean = mean(.data[[.x]], na.rm = TRUE),
+      median = median(.data[[.x]], na.rm = TRUE),
+      sd = sd(.data[[.x]], na.rm = TRUE)
+    ))
+
+# Combining output into one table
+spend_summary_table <- bind_rows(spend_summaries)
+knitr::kable(
+  spend_summary_table,
+  digits = 2,
+  booktabs = TRUE,
+  caption = "Summary Statistics for
+  European Government Spending Variables"
+)
+```
+
+This table summarizes the descriptive statistics for government transfers and contributions across social (`gov_soc`), education (`gov_edu`), health (`gov_hea`), and total (`gov_tot`) categories. The most significant finding is the massive discrepancy between the mean (average) and the median (middle value). This gap, combined with a standard deviation that is dramatically larger than the mean (over 3 million for the total), indicates that the data is heavily "right-skewed" and dominated by extreme outliers likely representing very large EU economies (germany etc) or specific years with huge budgets while the vast majority of the data points are actually quite small.
+
+## PART 2
+
+------------------------------------------------------------------------
+
+I have leveraged the `gt` and `gtExtras` packages as they allow for publication-quality HTML tables and in table visualizations that are not possible with standard base R or ggplot2.
+
+Please note that due to errors in saving gt tables into pdf , knitr is being used to save the table into a nice neat png format.
+
+```{r}
+library("gt")
+library("svglite")#needed for gt
+library("gtExtras")
+```
+
+```{r}
+make_summary_table <- function(df_eu) {
+  
+  df_clean <- df_eu |>
+    # Filter out zero/negative pre-tax incomes to avoid NaN
+    filter(a_pre > 10) |> 
+    mutate(
+      # Formula: (Post-Tax - Pre-Tax) / Pre-Tax
+      redistribution_rate = (a_pdi - a_pre) / a_pre) |>
+    # Remove any remaining infinite values just in case
+    filter(is.finite(redistribution_rate))
+
+  # Grouping and Summarize
+  summary_data <- df_clean |>
+    group_by(region) |>
+    summarise(
+      # Use MEDIAN to avoid skew from extreme outliers
+      median_redistribution = median(redistribution_rate, na.rm = TRUE),
+      # Keep Mean to compare, but it to be volatile
+      avg_redistribution = mean(redistribution_rate, na.rm = TRUE),
+      n = n(), 
+      .groups = "drop")
+  
+  # Create the GT Table
+  summary_data |>
+    gt() |>
+    fmt_percent(
+      columns = c(median_redistribution, avg_redistribution),
+      decimals = 1
+    ) |>
+    cols_label(
+      median_redistribution = "Median Redist. Rate",
+      avg_redistribution = "Avg. Redist. Rate",
+      n = "Sample Size"
+    ) |>
+    tab_header(
+      title = "Fiscal Redistribution by EU Region",
+      subtitle = "Excludes individuals with near-zero pre-tax income"
+    )
+}
+summarytable <- make_summary_table(df_eu)
+summarytable
+```
+
+After correcting for currency mismatches and data anomalies, the analysis reveals a fundamental structural difference between the welfare states of the "EU-15" and the "New Member States." While the median earner in both regions is a net contributor to the state effectively losing 6.7% (EU-15) and 4.3% (New Members) of their income to the tax-benefit wedge, the average outcomes diverge sharply. The EU-15 shows a massive positive average redistribution rate of 31.8%, compared to just 1.2% in the New Member States. This discrepancy indicates that while the Western European middle class bears a slightly higher tax burden, their systems utilize those funds to provide a significantly more aggressive safety net that drastically lifts the incomes of the poorest citizens, whereas the fiscal systems in the New Member States are much flatter and less redistributive at the bottom.
+
+```{r,results='hide'}
+# Creating the Table
+ineq_table <- df_eu |>
+  filter(year == 2021) |> # Focus post COVID where
+  #inequalities increased
+  group_by(region) |>
+  summarise(
+    # Simple Average of the pre-calculated shares
+    Avg_Top10_Share = mean(top10_pni, na.rm = TRUE),
+    Avg_Bot50_Share = mean(bot50_pni, na.rm = TRUE)) |>
+  #  Format with GT
+  gt() |>
+  tab_header(
+    title = "Income Inequality Snapshot (2021)",
+    subtitle = "Average post tax National Income Shares by Region"
+  ) |>
+  fmt_percent(
+    columns = c(Avg_Top10_Share, Avg_Bot50_Share),
+    decimals = 1) |>
+  cols_label(
+    region = "Region",
+    Avg_Top10_Share = "Top 10% Hold",
+    Avg_Bot50_Share = "Bottom 50% Hold") |>
+  tab_style(
+   #highlighting, useful feature of gt
+    style = list(
+      cell_fill(color = "beige"),      
+      cell_text(weight = "bold", color = "orange")),
+    locations = cells_body(
+      columns = Avg_Top10_Share))
+
+```
+
+```{r}
+gtsave(ineq_table, "inequality_table.png")
+
+# Display the image in  PDF
+knitr::include_graphics("inequality_table.png")
+```
+
+In the "EU-15" (Western Model): The Bottom 50% collectively holds a *larger* share of post-tax income (30.8%) than the Top 10% (25.8%).This is the hallmark of a strong welfare state. Through the aggressive redistribution we analyzed earlier (where the average rate was +31.8%), the state successfully tilts the balance of economic power toward the lower and middle classes.
+
+In the "NSM" (Eastern Model): The situation is reversed. The Top 10% holds a *larger* share (28.9%) than the entire Bottom 50% combined (26.4%).This reflects a more "top-heavy" economy. With lower corporate taxes and a weaker safety net (average redistribution of just +1.2%), the market-driven inequality persists into the final post-tax outcome.
+
+```{r}
+#using very handy function of gt_plt_summary()
+df_ire_visual <- df_eu |>
+
+  filter(isoname =="Ireland" & year >=2020) |>
+
+  select(mean,gov_soc)
+
+summary_tab <- df_ire_visual |>
+  gt_plt_summary()
+
+# save it as a PNG file
+gtsave(summary_tab, "ireland_summary.png")
+
+# Display the image in  PDF
+knitr::include_graphics("ireland_summary.png")
+```
+
+-   Income (`mean`): The average income across this period is \~€44,563. The Histogram (Plot Overview) is "clumpy" (bimodal), which indicates distinct jumps in national income year-over-year. This likely reflects the sharp economic recovery Ireland experienced post-2020.
+
+-   Social Spending (`gov_soc`): The average is \~€3,206, but the histogram shows a wide spread with a long tail to the right. This suggests a massive spike in social spending in one or two specific years, almost certainly the 2020-2021 Covid-19 period when Ireland introduced the Pandemic Unemployment Payment (PUP). The Standard Deviation (\~€2,022) is very high relative to the mean, confirming this volatility.
+
+-   Note that the `auto, kaut and kauto` are abbreviations for the scale of the numbers because `gt_plt_summary` automatically shortens long numbers to make them fit in the tiny plot space.`k` (Kilo) This stands for Thousands.`m` (Milli) This stands for Milli- (or one-thousandth, 0.001) \[mentally multiply "k" by 1,000 and divide "m" by 1,000.\]`auto`: indicating that the axis scaling was calculated automatically.
+
+## PART 3
+
+------------------------------------------------------------------------
+
+This section investigates whether fiscal redistribution operates uniformly across the European Union or whether distinct regional models exist. By comparing pre-tax and post-tax income inequality between the EU-15 countries and the New Member States (NMS), the analysis isolates the role of national tax-and-transfer systems in shaping final income distributions. A custom S3 object framework is implemented to ensure modular, transparent, and reproducible comparison across regions.
+
+**Constructor Function: `eu_compare()`**
+
+The `eu_compare()` function serves as an S3 constructor that enables structured comparison of income inequality between the EU-15 and New Member States for a specified year. The function filters the dataset to the selected year and computes group-level averages of pre-tax and post-tax income shares for the Bottom 50% and Top 10%. Inequality is defined as the Top 10% minus Bottom 50% share. The output is returned as a classed object, facilitating method dispatch.
+
+```{r}
+#redefing EU vs NMS for clean slate
+# Define EU-27 ISO codes 
+eu_iso2 <- c(
+  "AT","BE","BG","HR","CY","CZ","DK","EE","FI","FR","DE",
+  "GR","HU","IE","IT","LV","LT","LU","MT","NL","PL","PT",
+  "RO","SK","SI","ES","SE"
+)
+
+df_eu <- data |>
+ filter(iso %in% eu_iso2)
+
+# Create EU-15 and NMS-12 groups
+eu15_codes <- c("AT","BE","DE","DK","ES","FI","FR","GR",
+                "IE","IT","LU","NL","PT","SE","UK") 
+
+nms_codes <- setdiff(eu_iso2, eu15_codes)
+
+df_eu_3 <- df_eu |>
+ mutate(group =case_when(
+    iso %in% eu15_codes ~ "EU15",
+    iso %in% nms_codes ~ "NMS",
+    TRUE ~ NA_character_
+  )) |>
+ filter(!is.na(group))
+# Filter data for the requested year; stop if no data exists to stop erroes
+
+# S3 CLASS FUNCTION: eu_compare()
+#1. Constructor Function: eu_compare
+# This function takes a year and a dataset, calculates inequality stats,
+# and returns an object of class "eu_compare".
+eu_compare <- function(year, data) {
+  
+  df_year <- data |>filter(year == !!year)
+  
+  if (nrow(df_year) == 0) {
+    stop("No data available for this year.")
+  }
+  
+  # Summary statistics by group
+  # group by region (EU15 vs NMS) and calculate the 
+  #share of income held by the Bottom 50% and Top
+  #10% for both Pre-tax and Post-tax income.
+  agg <- df_year |>
+   group_by(group) |>
+   summarise(
+      bot50_pre = mean(bot50_pre, na.rm = TRUE),
+      top10_pre = mean(top10_pre, na.rm = TRUE),
+      inequality_pre = top10_pre - bot50_pre,
+      bot50_pdi = mean(bot50_pdi, na.rm = TRUE),
+      top10_pdi = mean(top10_pdi, na.rm = TRUE),
+      inequality_pdi = top10_pdi - bot50_pdi,
+      .groups = "drop"
+    )
+  
+  # Create S3 object
+  out <- list(
+    year = year,
+    results = agg
+  )
+  
+  class(out) <- "eu_compare"
+  return(out)
+}
+```
+
+**The `print.eu_compare()`** method defines a concise and interpretable console display for objects of class `"eu_compare"`. It presents a descriptive header identifying the comparison year, followed by a tabular summary of the computed inequality measures by region. This method improves readability while preserving the underlying data structure, adhering to S3 conventions that separate data representation from analytical computation.
+
+```{r}
+# 2.PRINT METHOD
+# This customizes how the object 
+#looks when printed to the console.
+print.eu_compare <- function(x, ...) {
+  cat("EU Inequality Comparison\n")
+  cat("Year:", x$year, "\n\n")
+  # Print results table (the raw data)
+  print(x$results)
+  invisible(x)
+}
+```
+
+**Summary Method: `summary.eu_compare()`**
+
+The `summary.eu_compare()` method performs secondary analysis by reshaping the group-level inequality measures and computing explicit inequality gaps between the New Member States and the EU-15. Differences are calculated for both pre-tax and post-tax inequality, allowing direct assessment of redistributive effectiveness. The method returns a tidy data frame without producing printed output, enabling flexible downstream formatting and ensuring compatibility with reproducible reporting workflows.
+
+```{r}
+# 3.SUMMARY METHOD
+# This method performs additional calculations
+#to summarize the key findings.#It calculates
+#the 'Gap' between New Member States (NMS) and EU15.
+summary.eu_compare <- function(object, ...) {
+  df <- object$results
+
+  df |>
+    pivot_wider(
+      names_from = group,
+      values_from = c(
+        bot50_pre, top10_pre, inequality_pre,
+        bot50_pdi, top10_pdi, inequality_pdi
+      )
+    ) |>
+    mutate(
+      diff_pre = inequality_pre_NMS - inequality_pre_EU15,
+      diff_pdi = inequality_pdi_NMS - inequality_pdi_EU15)
+}
+```
+
+```{r}
+#  Format summary
+format_summary_table <- function(summary_df, year) {
+
+  summary_df |>
+    select(
+      diff_pre,
+      diff_pdi
+    ) |>
+    rename(
+      `Market Inequality Gap (Pre-Tax)` = diff_pre,
+      `Disposable Inequality Gap (Post-Tax)` = diff_pdi) |>
+    gt() |>
+    fmt_number(
+      columns = everything(),
+      decimals = 3) |>
+    cols_align(
+      align = "center",
+      columns = everything()) |>
+    tab_header(
+      title = "EU Inequality Gap: NMS − EU-15",
+      subtitle = paste("Difference in Top 10% − Bottom 50% Income Shares,", year)
+    ) |>
+    tab_source_note(
+      source_note = "Positive values indicate higher inequality in
+      New Member States"
+    )}
+```
+
+**Plot Method: `plot.eu_compare()`**
+The `plot.eu_compare()` method provides a visual comparison of market and disposable income inequality across regions. By displaying pre-tax and post-tax inequality side-by-side for the EU-15 and NMS, the plot highlights the extent to which tax-and-transfer systems alter market-generated disparities. This visualization complements the tabular results and offers an intuitive illustration of cross-regional differences in redistributive capacity.
+
+```{r}
+# 4.PLOT METHOD
+#This generates a bar chart comparing Pre-tax vs Post-tax inequality.
+plot.eu_compare <- function(x, ...) {
+  df <- x$results|>
+    tidyr::pivot_longer(
+      cols = c(inequality_pre, inequality_pdi),
+      names_to = "type",
+      values_to = "inequality"
+    )
+
+  ggplot(df, aes(x = group, y = inequality, fill = type)) +
+    geom_col(position = "dodge", alpha = 0.8) +
+    labs(
+      title = paste("Pretax vs Posttax Inequality (", x$year, ")", sep = ""),
+      x = "Group",
+      y = "Inequality (Top 10% - Bottom 50%)"
+    ) +
+    theme_minimal()
+}
+
+```
+
+```{r}
+#| warning: false
+# EXAMPLE FUNCTION USAGE
+#comparing the latest year
+eu_2023 <- eu_compare(2023, df_eu_3)
+
+print(eu_2023)
+plot(eu_2023)
+```
+
+-   **The Blue Bars (Pre-tax):** Represent "Market Inequality": the gap between the rich (Top 10%) and the bottom half before the government gets involved.
+
+-   **The Red Bars (Post-tax):** Represent "Disposable Inequality"the gap that remains after taxes are paid and benefits are received.
+
+    The underlying economies of EU15 and NMS generate the same level of inequality naturally. In both regions, the market creates a significant gap between the top earners and the bottom 50%.
+
+-   The tax and transfer system in Western Europe is extremely powerful. Through progressive taxes and generous social transfers, the government effectively wipes out the statistical gap between the Top 10% share and the Bottom 50% share.In New Member States, the government intervenes very little. The inequality that exists in the market is largely the same inequality people face in their disposable income.
+
+```{r}
+summary_tbl <- summary(eu_2023)
+
+format_summary_table(summary_tbl, eu_2023$year)
+```
+
+The pre-tax inequality gap between the New Member States and the EU-15 is effectively zero (0.001), indicating that market-generated inequality is nearly identical across the two regions. In contrast, the large post-tax inequality gap (0.120) shows that substantially higher inequality persists in the New Member States after fiscal intervention. This pattern implies that cross-regional differences in inequality are driven by weaker redistributive capacity rather than underlying market structures.
+
+While these results are based on unweighted country averages, they accurately reflect structural differences in fiscal redistribution across EU regions, even if population level impacts vary slightly.
+
+## Conclusion
+
+The preceding analysis of European fiscal policies, utilizing data spanning over four decades, provides robust evidence for significant structural heterogeneity within the European Union’s redistributive landscape.
+
+First, longitudinal analysis of Ireland demonstrated high volatility in the post-tax income share of the Top 1%, characterized by a sharp decline during the post-2008 recessionary period and a subsequent, dramatic rebound that has pushed inequality measures beyond previous historical highs. This highlights that even highly developed economies remain vulnerable to market forces that concentrate wealth.
+
+Second, the analysis of fiscal progressivity confirms the intensive vertical redistribution in the Irish system: the Bottom 50% consistently function as major Net Beneficiaries, with the net transfer rate peaking as high as 70% in some years, though falling to 50.8% by 2023. Conversely, the Top 10% consistently operate as major Net Contributors, sacrificing approximately 35% to 43% of their pre-tax income to the system.
+
+Third, the primary finding is the identification of a profound structural dichotomy between the two regional blocs: the EU-15 countries exhibit high median redistribution rates (31.8% in the overall findings as alluded to in the report's structure ), indicating highly progressive and expansive tax-and-transfer systems. In stark contrast, the New Member States demonstrate significantly flatter fiscal models, with substantially lower redistribution rates (1.2% in the overall findings). These results compel the conclusion that the notion of a monolithic "European Social Model" is empirically oversimplified, suggesting that two distinct fiscal models operate within the EU, with widely differing degrees of commitment to reducing market-generated inequality through government action.
+
+## References
+
+gt : *Iannone R, Cheng J, Schloerke B, Hughes E, Lauer A, Seo J, Brevoort K, Roy O (2025).*
+
+gt Extra : *Mock T (2025). gtExtras: Extending 'gt' for Beautiful HTML Tables. R package version 0.6.0, <https://CRAN.R-project.org/package=gtExtras>.*

@@ -13,4 +13,6 @@ This analysis seeks to establish whether the widely-cited "European Social Model
 
 ## Link to dataset
 
-[Government Redistribution and Posttax Income Inequality in 174 Countries since 1980]([url](https://www.dropbox.com/scl/fi/rd1d7rke0wwwr6948ea67/fisher-gethin-redistribution-2025-01-10.dta?rlkey=44fzwsva11qxniogr7jo2wc5g&st=l3uxpw4d&dl=0))
+[Government Redistribution and Posttax Income Inequality in 174 Countries since 1980]([https://pages.github.com/](https://www.dropbox.com/scl/fi/rd1d7rke0wwwr6948ea67/fisher-gethin-redistribution-2025-01-10.dta?rlkey=44fzwsva11qxniogr7jo2wc5g&st=l3uxpw4d&dl=0)).
+
+
